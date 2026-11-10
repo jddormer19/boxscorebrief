@@ -57,3 +57,50 @@ flowchart LR
    sound, then scheduled and published through Instagram's official API.
 6. **Measure.** Insights flow back every 6 hours (Reels proved to have ~10× the reach, so the schedule changed),
    and the eval harness grades captions with rule checks and an LLM judge calibrated against my own labels.
+
+## Key decisions
+
+| Decision | Instead of | Why |
+|---|---|---|
+| **Captions may only use numbers from a facts object** | Letting the model reason over raw data | It defines exactly what's allowed to be said, which makes every claim checkable |
+| **A cheap rule-based fact checker gates publishing; flagged posts go to a human** | An LLM judge in the hot path, or blocking anything flagged | Fast, free and deterministic. When the old checker blocked flags automatically, 23 accurate posts got stuck, so flags became a review queue |
+| **A one-shot prompt in production, not an agent** | A self-revising agent (draft → check → revise) | The agent tied the improved prompt on quality (4.81) at ~40× the tokens. Rule: start cheap, escalate only when a cheap check fails |
+| **Calibrate the LLM judge before trusting it** | Taking its grades at face value | Kappa against my hand labels started at only 0.44; reviewing every disagreement fixed errors on *both* sides (0.61) |
+| **Split eval data by date, plus a daily check on brand-new posts** | A random split | Mirrors real use, and the daily job catches what a small test set can't (106 fresh posts scored so far) |
+| **Claude over a local model** | Qwen 7B/3B on the laptop | 7B was accurate but took 77 s per caption vs. ~3 s; 3B was the most dangerous, with the right format but wrong facts |
+| **Benchmark the models against the betting market** | Reporting accuracy vs. a coin flip | The market is the honest bar. It's still ahead, and the account says so |
+| **Reels-first schedule** | Gut feel about formats | Insights showed ~10× the reach for Reels (avg 94 vs. 9 accounts) |
+| **Original synthesized audio** | Licensed or trending sounds | Nothing to license, and nothing for Instagram to mute |
+
+### The fact checker in code
+
+The interesting part is not "find numbers that aren't in the facts." It's *which* numbers are legitimately new.
+Each line below came from a real false alarm on a live draft:
+
+```python
+def unsupported_numbers(text: str, facts: dict) -> list[str]:
+    """Numbers in the text that don't appear anywhere in the facts."""
+    clean = re.sub(r"#\w+", "", text)                    # ignore hashtags (#49ers)
+    clean = re.sub(r"(?<=\d),(?=\d{3}\b)", "", clean)    # "11,437" is one number
+    clean = LABEL.sub("", clean)                         # "Slide 1" is a label, not a stat
+    rates = _known_rates(facts)
+    for match in ODDS.finditer(clean):                   # "1 in 3" derived from a 66% favorite
+        if _is_derived(match.group(1), match.group(2), rates):
+            clean = clean.replace(match.group(0), "")
+    for match in TIMES.finditer(clean):                  # "20 times the usual rate" (18% vs 0.9%)
+        if _is_ratio(match.group(1), facts):
+            clean = clean.replace(match.group(0), "")
+    known = _facts_numbers(facts) | _known_percents(facts) | _list_lengths(facts) | _rounded(facts)
+    bad = []
+    for m in NUMBER.finditer(clean):
+        n = m.group(0)
+        if m.end() < len(clean) and clean[m.end()].isalpha():
+            continue                                     # "76ers" is a team name, not a stat
+        if n not in known:
+            bad.append(n)
+    return sorted(set(bad), key=float)
+```
+
+v1 → v2 cut false alarms on 30 hand-labeled posts from 15 to 5. v3 (shown above) clears all 23 posts that had been stuck,
+and flags just 1 of 90 drafts and published posts, and that one is a real error.
+**What it hasn't been tested on yet:** how many *invented* numbers it catches. That's the next experiment (see Limitations).
