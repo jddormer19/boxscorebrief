@@ -153,3 +153,47 @@ The worst habit, describing our own pick losing, came from **my own prompt**. It
 Because some test posts inspired the fixes, a daily job also scores **every new post** with both prompts.
 Across **106 fresh posts** (Oct 22 – Nov 10): quality **3.53 → 4.51**, loser framing **47 → 5**, non-factual **12 → 7**,
 with no latency cost (median 4.6 s both).
+
+## The models, scored against the market
+
+| | Held-out backtest | Model | Betting market | Live this season |
+|---|---|---|---|---|
+| **NFL** | 2018–2025 · 2,219 games | 65.6% · log loss 0.627 | 66.2% · 0.609 | 39 / 57 (68%), market 41 of 56 |
+| **NBA** | 2020–2026 · 8,913 games | 66.8% · log loss 0.609 | 68.8% on 3,961 matched games | 78 / 118, market 84 / 118 |
+| **MLB** | 2021–2025 · 12,356 games | 57.3% · log loss 0.677 | 57.9% · 0.674 | Postseason: 19–17 on games, 8 of 10 series |
+
+Every backtest is walk-forward: the model only ever sees games before the one it predicts, and a test mutates future
+data to prove nothing leaks. All three beat simple baselines easily (always picking the home team: 54.4% NFL, 55.3% NBA),
+**but none beats the betting market.** When my model and the market disagreed this season, the market was right 13 of 17 times.
+That's why the account explains *why* a team is favored, and why it never gives betting advice.
+
+## What went wrong (and what I changed)
+
+- **The media tunnel dropped overnight on day one.** → A watchdog now checks it every 60 seconds and restarts it, and every post
+  checks its media link is reachable before publishing.
+- **The fact checker blocked accurate posts.** Its false alarms left 23 correct drafts stuck. → Rebuilt twice with
+  measured false-alarm rates, and flags became a human review queue instead of a block.
+- **My own prompt taught the model a bad habit** ("loser framing"). → Replaced the example; measured 9/16 → 0/16.
+- **A title-odds Reel crashed when a team reached 100%.** → Axis capped, with a regression test.
+- **A home/away mix-up briefly showed the World Series at 3–2.** It was caught before posting, and now there's a test.
+- **The agent's workspace leaked into its results twice** (old captions, leftover drafts). Lesson: an agent's
+  files are part of its input, so evals need a clean room.
+- **A change shipped with a failing test.** → Every merge now gets a short written review.
+
+## Limitations
+
+- **Small samples.** 30 hand-labeled posts, 16 test posts, and post-format decisions based on as few as 1–6 posts per image type.
+  The daily fresh-post job exists to grow the evidence.
+- **The checker's recall is untested.** I know its false-alarm rate, but not yet how many *invented* numbers it catches.
+- **Kappa is unweighted** on a 1–5 scale, so it treats a 4-vs-5 disagreement like 1-vs-5.
+- **Reels lose viewers in 2–4 seconds** of ~10, so reach is good but watch time isn't yet.
+- **It runs on one laptop.** If the laptop sleeps, game-day posts expire.
+- **CI covers only the eval repo,** and production doesn't yet log token cost per post.
+
+## What's next
+
+1. **Planted-error test:** insert fake stats into real captions and measure how many the checker and the judge catch.
+2. Weighted kappa alongside unweighted; CI for every repo; cost per post logged in production.
+3. Move hosting off the laptop.
+4. **The next project:** a research agent for Kalshi sports markets that uses these same models, built evals-first and
+   benchmarked against the market.
