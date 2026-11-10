@@ -2,22 +2,22 @@
 
 **A sports-by-the-numbers Instagram account that runs itself, and an eval harness that keeps it honest.**
 
-[@boxscorebrief](https://www.instagram.com/boxscorebrief/) posts NFL, NBA and MLB predictions every day.
+[@boxscorebrief](https://www.instagram.com/boxscorebrief/) posts NFL, NBA and MLB predictions almost every day.
 My own models make the picks, Claude writes each caption from the numbers only, a fact checker blocks
-invented stats, and the posts publish through Instagram's official API, all on a schedule, with no one at the keyboard.
+invented stats, and the posts publish through Instagram's official API on a schedule. Only posts the checker flags wait for my review.
 Honesty is the brand: every miss gets posted, and the models are scored against the betting market in public.
 
 ## At a glance
 
 | | |
 |---|---|
-| **Live since** | Oct 12, 2026 · 113 posts published automatically · 407 followers in 4 weeks |
+| **Live since** | Oct 12, 2026 · 113 posts published by Nov 9 (106 with no human step) · 407 followers in 4 weeks |
 | **What works on Instagram** | Reels reach ~10× more accounts than image posts (avg 94 vs. 9), so the schedule is Reels-first |
 | **Caption quality** | 3.38 → **4.81** / 5 on held-out posts after eval-driven prompt fixes; "loser framing" 9/16 → **0/16** |
-| **LLM judge you can trust** | Calibrated against my hand labels: Cohen's kappa 0.44 → **0.61**, factual agreement 29/30 |
+| **LLM judge, validated** | Checked against my hand labels: Cohen's kappa 0.44 → **0.61** (30 posts), factual agreement 29/30 |
 | **Fact checker** | False alarms cut **67%** (15 → 5 of 30 labeled posts) |
-| **Agent vs. prompt** | A self-revising agent matched the improved prompt's quality at **~40× the tokens**, so production uses the prompt |
-| **Models vs. the market** | NFL 65.6% on 2,219 held-out games (market 66.2%); NBA 66.8% on 8,913 games. The market is still ahead, and the page says so |
+| **Agent vs. prompt** | A self-revising agent matched the improved prompt's quality at an estimated **~40× the tokens**, so production uses the prompt |
+| **Models vs. the market** | Held-out games: NFL 65.6% vs. market 66.2% (2,219 games); NBA 67.6% vs. 68.8% (3,961 games). The market is still ahead, and the page says so |
 | **Engineering** | Python · FastAPI · Docker Compose · APScheduler · Claude API · 300+ tests across 4 repos |
 
 ## How it works
@@ -46,7 +46,7 @@ flowchart LR
 
 1. **Predict.** Three models I built and backtested walk-forward: NFL and NBA ridge models with injury and
    player-availability features, and an MLB playoff model that computes exact series and bracket odds.
-   Every feature is recorded before the game is played, and a test mutates future data to prove nothing leaks.
+   Every feature is computed only from data available before the game, and a test mutates future data to prove nothing leaks.
 2. **Tell the story.** A source module turns each prediction into a `Story`: the exact facts a caption may use,
    plus the card or Reel to draw.
 3. **Write.** Claude writes the headline, caption and hashtags from those facts only, returned as structured output.
@@ -65,9 +65,9 @@ flowchart LR
 | **Captions may only use numbers from a facts object** | Letting the model reason over raw data | It defines exactly what's allowed to be said, which makes every claim checkable |
 | **A cheap rule-based fact checker gates publishing; flagged posts go to a human** | An LLM judge in the hot path, or blocking anything flagged | Fast, free and deterministic. When the old checker blocked flags automatically, 23 accurate posts got stuck, so flags became a review queue |
 | **A one-shot prompt in production, not an agent** | A self-revising agent (draft → check → revise) | The agent tied the improved prompt on quality (4.81) at ~40× the tokens. Rule: start cheap, escalate only when a cheap check fails |
-| **Calibrate the LLM judge before trusting it** | Taking its grades at face value | Kappa against my hand labels started at only 0.44; reviewing every disagreement fixed errors on *both* sides (0.61) |
+| **Validate the LLM judge against my labels before trusting it** | Taking its grades at face value | Kappa against my hand labels started at only 0.44; reviewing every disagreement fixed errors on *both* sides (0.61) |
 | **Split eval data by date, plus a daily check on brand-new posts** | A random split | Mirrors real use, and the daily job catches what a small test set can't (106 fresh posts scored so far) |
-| **Claude over a local model** | Qwen 7B/3B on the laptop | 7B was accurate but took 77 s per caption vs. ~3 s; 3B was the most dangerous, with the right format but wrong facts |
+| **Claude over a local model** | Qwen 7B/3B on the laptop | 7B was accurate but took 77 s per caption vs. ~3 s for Claude in the same test; 3B was the most dangerous, with the right format but wrong facts |
 | **Benchmark the models against the betting market** | Reporting accuracy vs. a coin flip | The market is the honest bar. It's still ahead, and the account says so |
 | **Reels-first schedule** | Gut feel about formats | Insights showed ~10× the reach for Reels (avg 94 vs. 9 accounts) |
 | **Original synthesized audio** | Licensed or trending sounds | Nothing to license, and nothing for Instagram to mute |
@@ -134,9 +134,9 @@ def kappa(human, model):
 ```
 
 The first run agreed with me at only **κ = 0.44**. Going through all 9 disagreements, the judge was right more than once:
-a "35.7%" I'd marked as invented was in the data (as 0.357), and it caught three real errors I'd missed that no number
-checker could, because every number in them was correct (a false "biggest jump," a model adjustment described as a real score, an
-invented reason for a pick). After fixing the rubric *and* my labels: **κ = 0.61, factual agreement 29/30.**
+a "35.7%" I'd marked as invented was in the data (as 0.357), and it caught three real errors I'd missed (two misread claims and
+one invented reason) that no number checker could, because every number in them was correct: a false "biggest jump," a model
+adjustment described as a real score, and an invented reason for a pick. After fixing the rubric *and* my labels: **κ = 0.61, factual agreement 29/30.**
 
 ### What the measurements changed
 
@@ -145,26 +145,32 @@ invented reason for a pick). After fixing the rubric *and* my labels: **κ = 0.6
 | Mean quality (1–5) | 3.38 | **4.81** | 4.81 |
 | "Loser framing" | 9 / 16 | **0 / 16** | 1 / 16 |
 | Judge-flagged factual errors | 2 / 16 | **0 / 16** | 0 |
-| Input tokens per caption | ~2.4k | ~2.6k (+5%) | **~105k (~40×)** |
+| Input tokens per caption | ~2.4k | ~2.6k (+6%) | **~105k (~40×, estimated)** |
 
 The worst habit, describing our own pick losing, came from **my own prompt**. Its example sentence
 ("a 60% favorite loses 4 times in 10") was being copied. Models treat examples as instructions.
 
 Because some test posts inspired the fixes, a daily job also scores **every new post** with both prompts.
 Across **106 fresh posts** (Oct 22 – Nov 10): quality **3.53 → 4.51**, loser framing **47 → 5**, non-factual **12 → 7**,
-with no latency cost (median 4.6 s both).
+with no latency cost (median 4.6 s both). One thing got worse: v2 passed every rule grader less often (68 vs. 76 of 106),
+mostly from title-odds captions that now compute rises and falls the checker didn't yet recognize, and more captions
+missing the closing question.
+
+**Shipping it, two weeks late.** v2 won the eval, but it stayed in the eval repo: production kept running v1 until
+Nov 10, and 31% of captions published in the two weeks before used loser framing. v2 is now live, a test fails if
+production's prompt ever drifts from the validated one, and the before/after on real published posts is being measured.
 
 ## The models, scored against the market
 
 | | Held-out backtest | Model | Betting market | Live this season |
 |---|---|---|---|---|
-| **NFL** | 2018–2025 · 2,219 games | 65.6% · log loss 0.627 | 66.2% · 0.609 | 39 / 57 (68%), market 41 of 56 |
-| **NBA** | 2020–2026 · 8,913 games | 66.8% · log loss 0.609 | 68.8% on 3,961 matched games | 78 / 118, market 84 / 118 |
+| **NFL** | 2018–2025 · 2,219 games | 65.6% · log loss 0.627 | 66.2% · 0.609 | 38 vs. market 41 of 56 matched games |
+| **NBA** | 2020–2026 · 3,961 games with a market line | 67.6% · log loss 0.590 | 68.8% · 0.583 | 78 vs. market 84 of 118 |
 | **MLB** | 2021–2025 · 12,356 games | 57.3% · log loss 0.677 | 57.9% · 0.674 | Postseason: 19–17 on games, 8 of 10 series |
 
 Every backtest is walk-forward: the model only ever sees games before the one it predicts, and a test mutates future
-data to prove nothing leaks. All three beat simple baselines easily (always picking the home team: 54.4% NFL, 55.3% NBA),
-**but none beats the betting market.** When my model and the market disagreed this season, the market was right 13 of 17 times.
+data to prove nothing leaks. All three beat the simplest baseline (always picking the home team: 54.4% NFL, 55.3% NBA, 53.0% MLB),
+**but none beats the betting market.** When my model and the market disagreed this season (NFL and NBA), the market was right 13 of 17 times.
 That's why the account explains *why* a team is favored, and why it never gives betting advice.
 
 ## What went wrong (and what I changed)
@@ -173,7 +179,9 @@ That's why the account explains *why* a team is favored, and why it never gives 
   checks its media link is reachable before publishing.
 - **The fact checker blocked accurate posts.** Its false alarms left 23 correct drafts stuck. → Rebuilt twice with
   measured false-alarm rates, and flags became a human review queue instead of a block.
-- **My own prompt taught the model a bad habit** ("loser framing"). → Replaced the example; measured 9/16 → 0/16.
+- **My own prompt taught the model a bad habit** ("loser framing"). → Fixed in the eval repo and measured (9/16 → 0/16),
+  but I didn't notice for two weeks that production was still on the old prompt. → Shipped Nov 10, with a parity test so
+  production and the validated prompt can't drift apart again.
 - **A title-odds Reel crashed when a team reached 100%.** → Axis capped, with a regression test.
 - **A home/away mix-up briefly showed the World Series at 3–2.** It was caught before posting, and now there's a test.
 - **The agent's workspace leaked into its results twice** (old captions, leftover drafts). Lesson: an agent's
@@ -197,3 +205,14 @@ That's why the account explains *why* a team is favored, and why it never gives 
 3. Move hosting off the laptop.
 4. **The next project:** a research agent for Kalshi sports markets that uses these same models, built evals-first and
    benchmarked against the market.
+
+## Data sources and credits
+
+- **NFL:** schedules, play-by-play, injuries and rosters from [nflverse](https://github.com/nflverse/nflverse-data),
+  licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- **MLB:** MLB data © MLB Advanced Media, used under its terms for non-commercial purposes.
+- **Betting lines:** used only as a benchmark; aggregate accuracy is published, never raw odds.
+- Captions are written by Claude (Anthropic) from my own models' outputs. All graphics and audio are original.
+
+*BoxScoreBrief is an independent fan project, not affiliated with or endorsed by the NFL, NBA, MLB or any team.
+Predictions are for entertainment, not betting advice.*
