@@ -1,6 +1,6 @@
 # BoxScoreBrief
 
-**A sports-by-the-numbers Instagram account that runs itself, and an eval harness that keeps it honest.**
+**A sports-by-the-numbers Instagram account that posts itself, and an eval harness that keeps it honest.**
 
 [@boxscorebrief](https://www.instagram.com/boxscorebrief/) posts NFL, NBA and MLB predictions almost every day.
 My own models make the picks, Claude writes each caption from the numbers only, a fact checker blocks
@@ -80,7 +80,7 @@ flowchart LR
 ### The fact checker in code
 
 The interesting part is not "find numbers that aren't in the facts." It's *which* numbers are legitimately new.
-Each line below came from a real false alarm on a live draft:
+Each line below came from a real false alarm on a real caption:
 
 ```python
 def unsupported_numbers(text: str, facts: dict) -> list[str]:
@@ -110,7 +110,7 @@ def unsupported_numbers(text: str, facts: dict) -> list[str]:
 v1 → v2 cut false alarms on 30 hand-labeled posts from 15 to 5. v3 clears all 23 posts that had been stuck, and flags
 just 1 of 90 drafts and published posts, and that one is a real error. v4 (shown above) allows a team's *own* rise or fall
 (26% → 100% is "rose 74 points"), which the new prompt asks for, and nothing broader: on title-odds captions it took false
-flags from 8 of 15 to 0, at a cost of under one point of overall recall.
+flags from 8 of 15 to 0, at a cost of under one point of overall recall (4 points on title-odds captions).
 
 **How many invented numbers does it catch?** I planted 4,596 single-number errors (±1, +7, ×1.5) into 114 real captions:
 it catches about **70%**. The misses are mostly numbers that happen to exist elsewhere in the facts, which is why the
@@ -168,7 +168,7 @@ mostly from title-odds captions that now compute rises and falls the checker did
 missing the closing question.
 
 **Shipping it, two weeks late.** v2 won the eval, but it stayed in the eval repo: production kept running v1 until
-Nov 10, and 31% of captions published in the two weeks before used loser framing. v2 is now live, a test fails if
+Nov 10, and 31% of captions published in the two weeks before used loser framing (19 of 61). v2 is now live, a test fails if
 production's prompt ever drifts from the validated one, and the before/after on real published posts is being measured.
 
 ## The models, scored against the market
@@ -177,7 +177,7 @@ production's prompt ever drifts from the validated one, and the before/after on 
 |---|---|---|---|---|
 | **NFL** | 2018–2025 · 2,219 games | 65.6% · log loss 0.627 | 66.2% · 0.609 | 38 vs. market 41 of 56 matched games |
 | **NBA** | 2020–2026 · 3,961 games with a market line | 67.6% · log loss 0.590 | 68.8% · 0.583 | 78 vs. market 84 of 118 |
-| **MLB** | 2021–2025 · 12,356 games | 57.3% · log loss 0.677 | 57.9% · 0.674 | Postseason: 19–17 on games, 8 of 10 series |
+| **MLB** | 2021–2025 · 12,356 games | 57.3% · log loss 0.677 | 57.9% · 0.674 (on 11,437 games with a line) | Postseason: 19–17 on games, 8 of 10 series |
 
 Every backtest is walk-forward: the model only ever sees games before the one it predicts, and a test mutates future
 data to prove nothing leaks. All three beat the simplest baseline (always picking the home team: 54.4% NFL, 55.3% NBA, 53.0% MLB),
@@ -242,6 +242,8 @@ That's why the account explains *why* a team is favored, and why it never gives 
 
 - **NFL:** schedules, play-by-play, injuries and rosters from [nflverse](https://github.com/nflverse/nflverse-data),
   licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- **NBA:** public box scores, schedules and injury reports, used for this non-commercial project; to be replaced by a
+  licensed feed before any commercial use.
 - **MLB:** MLB data © MLB Advanced Media, used under its terms for non-commercial purposes.
 - **Betting lines:** used only as a benchmark; aggregate accuracy is published, never raw odds.
 - Captions are written by Claude (Anthropic) from my own models' outputs. All graphics and audio are original.
