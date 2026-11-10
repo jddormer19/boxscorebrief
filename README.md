@@ -104,3 +104,52 @@ def unsupported_numbers(text: str, facts: dict) -> list[str]:
 v1 → v2 cut false alarms on 30 hand-labeled posts from 15 to 5. v3 (shown above) clears all 23 posts that had been stuck,
 and flags just 1 of 90 drafts and published posts, and that one is a real error.
 **What it hasn't been tested on yet:** how many *invented* numbers it catches. That's the next experiment (see Limitations).
+
+## How I know it works: the eval harness
+
+[boxscorebrief-evals](https://github.com/jddormer19/boxscorebrief-evals) grades every caption two ways:
+
+- **Rule graders** (plain code): every number supported, under 900 characters, ends with a question, a headline, emoji and betting-language rules.
+- **An LLM judge** (Claude, structured output): factual or not, "loser framing" or not, and quality 1–5, with hard caps:
+  any invented stat caps quality at 1.
+
+An LLM judge is only useful if it agrees with a human, so I hand-labeled 30 posts and measured agreement before trusting it:
+
+```python
+class Verdict(BaseModel):          # the judge must answer in this shape
+    factual: bool
+    loser_framing: bool
+    quality: int                   # 1-5; an invented stat caps it at 1
+    reason: str
+
+def kappa(human, model):
+    """Cohen's kappa: agreement between two lists of labels, corrected for chance."""
+    n = len(human)
+    observed = sum(h == m for h, m in zip(human, model)) / n
+    categories = set(human) | set(model)
+    expected = sum((human.count(k) / n) * (model.count(k) / n) for k in categories)
+    if expected == 1:
+        return 1.0
+    return (observed - expected) / (1 - expected)
+```
+
+The first run agreed with me at only **κ = 0.44**. Going through all 9 disagreements, the judge was right more than once:
+a "35.7%" I'd marked as invented was in the data (as 0.357), and it caught three real errors I'd missed that no number
+checker could, because every number in them was correct (a false "biggest jump," a model adjustment described as a real score, an
+invented reason for a pick). After fixing the rubric *and* my labels: **κ = 0.61, factual agreement 29/30.**
+
+### What the measurements changed
+
+| On 16 held-out test posts (date split) | Prompt v1 | Prompt v2 | Self-revising agent |
+|---|---|---|---|
+| Mean quality (1–5) | 3.38 | **4.81** | 4.81 |
+| "Loser framing" | 9 / 16 | **0 / 16** | 1 / 16 |
+| Judge-flagged factual errors | 2 / 16 | **0 / 16** | 0 |
+| Input tokens per caption | ~2.4k | ~2.6k (+5%) | **~105k (~40×)** |
+
+The worst habit, describing our own pick losing, came from **my own prompt**. Its example sentence
+("a 60% favorite loses 4 times in 10") was being copied. Models treat examples as instructions.
+
+Because some test posts inspired the fixes, a daily job also scores **every new post** with both prompts.
+Across **106 fresh posts** (Oct 22 – Nov 10): quality **3.53 → 4.51**, loser framing **47 → 5**, non-factual **12 → 7**,
+with no latency cost (median 4.6 s both).
