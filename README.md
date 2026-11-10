@@ -7,6 +7,11 @@ My own models make the picks, Claude writes each caption from the numbers only, 
 invented stats, and the posts publish through Instagram's official API on a schedule. Only posts the checker flags wait for my review.
 Honesty is the brand: every miss gets posted, and the models are scored against the betting market in public.
 
+<p align="center">
+  <img src="assets/odds-race-demo.gif" width="270" alt="A BoxScoreBrief Reel: Milwaukee's World Series odds climbing from 26% to 100%">
+  <br><sub>The account's top Reel (264 accounts reached): title odds drawn over the season, rendered in Python with original sound.</sub>
+</p>
+
 ## At a glance
 
 | | |
@@ -15,7 +20,7 @@ Honesty is the brand: every miss gets posted, and the models are scored against 
 | **What works on Instagram** | Reels reach ~10× more accounts than image posts (avg 94 vs. 9), so the schedule is Reels-first |
 | **Caption quality** | 3.38 → **4.81** / 5 on held-out posts after eval-driven prompt fixes; "loser framing" 9/16 → **0/16** |
 | **LLM judge, validated** | Checked against my hand labels: Cohen's kappa 0.44 → **0.61** (30 posts), factual agreement 29/30 |
-| **Fact checker** | False alarms cut **67%** (15 → 5 of 30 labeled posts) |
+| **Fact checker** | False alarms cut **67%** (15 → 5 of 30 labeled posts); catches ~**70%** of 4,596 planted wrong numbers |
 | **Agent vs. prompt** | A self-revising agent matched the improved prompt's quality at an estimated **~40× the tokens**, so production uses the prompt |
 | **Models vs. the market** | Held-out games: NFL 65.6% vs. market 66.2% (2,219 games); NBA 67.6% vs. 68.8% (3,961 games). The market is still ahead, and the page says so |
 | **Engineering** | Python · FastAPI · Docker Compose · APScheduler · Claude API · 300+ tests across 4 repos |
@@ -90,7 +95,8 @@ def unsupported_numbers(text: str, facts: dict) -> list[str]:
     for match in TIMES.finditer(clean):                  # "20 times the usual rate" (18% vs 0.9%)
         if _is_ratio(match.group(1), facts):
             clean = clean.replace(match.group(0), "")
-    known = _facts_numbers(facts) | _known_percents(facts) | _list_lengths(facts) | _rounded(facts)
+    known = (_facts_numbers(facts) | _known_percents(facts) | _list_lengths(facts) | _rounded(facts)
+             | _series_differences(facts))           # a team's own rise: 26% -> 100% makes "74" valid
     bad = []
     for m in NUMBER.finditer(clean):
         n = m.group(0)
@@ -101,9 +107,14 @@ def unsupported_numbers(text: str, facts: dict) -> list[str]:
     return sorted(set(bad), key=float)
 ```
 
-v1 → v2 cut false alarms on 30 hand-labeled posts from 15 to 5. v3 (shown above) clears all 23 posts that had been stuck,
-and flags just 1 of 90 drafts and published posts, and that one is a real error.
-**What it hasn't been tested on yet:** how many *invented* numbers it catches. That's the next experiment (see Limitations).
+v1 → v2 cut false alarms on 30 hand-labeled posts from 15 to 5. v3 clears all 23 posts that had been stuck, and flags
+just 1 of 90 drafts and published posts, and that one is a real error. v4 (shown above) allows a team's *own* rise or fall
+(26% → 100% is "rose 74 points"), which the new prompt asks for, and nothing broader: on title-odds captions it took false
+flags from 8 of 15 to 0, at a cost of under one point of overall recall.
+
+**How many invented numbers does it catch?** I planted 4,596 single-number errors (±1, +7, ×1.5) into 114 real captions:
+it catches about **70%**. The misses are mostly numbers that happen to exist elsewhere in the facts, which is why the
+LLM judge exists (see Limitations).
 
 ## How I know it works: the eval harness
 
@@ -192,7 +203,8 @@ That's why the account explains *why* a team is favored, and why it never gives 
 
 - **Small samples.** 30 hand-labeled posts, 16 test posts, and post-format decisions based on as few as 1–6 posts per image type.
   The daily fresh-post job exists to grow the evidence.
-- **The checker's recall is untested.** I know its false-alarm rate, but not yet how many *invented* numbers it catches.
+- **The fact checker catches about 70% of planted wrong numbers.** Swapped teams and invented reasons get past it by design,
+  which is what the LLM judge is for, and the judge isn't in the publishing path yet.
 - **Kappa is unweighted** on a 1–5 scale, so it treats a 4-vs-5 disagreement like 1-vs-5.
 - **Reels lose viewers in 2–4 seconds** of ~10, so reach is good but watch time isn't yet.
 - **It runs on one laptop.** If the laptop sleeps, game-day posts expire.
@@ -200,11 +212,31 @@ That's why the account explains *why* a team is favored, and why it never gives 
 
 ## What's next
 
-1. **Planted-error test:** insert fake stats into real captions and measure how many the checker and the judge catch.
+1. **Planted-error test for the LLM judge too**, then put the judge in the publishing path for posts the checker can't verify.
 2. Weighted kappa alongside unweighted; CI for every repo; cost per post logged in production.
 3. Move hosting off the laptop.
 4. **The next project:** a research agent for Kalshi sports markets that uses these same models, built evals-first and
    benchmarked against the market.
+
+## What this project demonstrates
+
+- **LLM application engineering:** generation grounded in a facts object, structured outputs, a rule-based guardrail on
+  every caption, a human review queue for anything flagged, and a measured prompt-vs-agent cost decision.
+- **Evaluation:** rule graders plus an LLM judge validated against hand labels (Cohen's kappa), a date-based held-out split,
+  a daily eval on brand-new posts, and planted-error tests: 4,596 wrong numbers planted into 114 real captions to
+  measure how many the checker catches.
+- **Applied ML and forecasting:** ridge and logistic models with injury and player-availability features, walk-forward
+  backtests, leakage tests that mutate future data, exact series and bracket probabilities, and honest benchmarking against the betting market.
+- **Production engineering:** Docker Compose services, a scheduler, Instagram's official API, a tunnel watchdog,
+  pre-publish media checks, a parity test that keeps production on the validated prompt, rollback images, and a written review for every change.
+- **Ownership:** I came up with it, built it, and run it: models, pipeline, evals, design and the account itself.
+
+## Links
+
+- **Live account:** [@boxscorebrief](https://www.instagram.com/boxscorebrief/)
+- **Eval harness (public):** [boxscorebrief-evals](https://github.com/jddormer19/boxscorebrief-evals) ·
+  write-up: [What my AI judge taught me about my own mistakes](https://github.com/jddormer19/boxscorebrief-evals/blob/master/WRITEUP.md)
+- **Posting app and models:** private repos; walkthroughs available on request.
 
 ## Data sources and credits
 
